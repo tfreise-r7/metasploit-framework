@@ -221,9 +221,7 @@ class Driver < Msf::Ui::Driver
       self.framework.modules.add_module_path(opts['ModulePath']) if opts['ModulePath']
 
       # Rebuild the module cache in a background thread
-      self.framework.threads.spawn("ModuleCacheRebuild", true) do
-        self.framework.modules.refresh_cache_from_module_files
-      end
+      self.framework.modules.async.refresh_cache_from_module_files
     end
 
     # Load console-specific configuration (after module paths are added)
