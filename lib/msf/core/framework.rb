@@ -74,6 +74,12 @@ class Framework
   require 'msf/core/db_manager'
   require 'msf/core/event_dispatcher'
 
+  #
+  # Attributes
+  #
+
+  # The Celluloid::SupervisionGroup that is the root of the supervision tree.
+  attr_accessor :supervision_group
 
   #
   # Creates an instance of the framework context.
@@ -91,6 +97,8 @@ class Framework
     self.datastore = DataStore.new
     self.jobs      = Rex::JobContainer.new
     self.plugins   = PluginManager.new(self)
+    # ensure supervision_group is started, so that accessing it doesn't need to be Thread-safe
+    self.supervision_group
 
     # Configure the thread factory
     Rex::ThreadFactory.provider = Metasploit::Framework::ThreadFactoryProvider.new(framework: self)
@@ -101,6 +109,20 @@ class Framework
     events.add_general_subscriber(subscriber)
     events.add_db_subscriber(subscriber)
     events.add_ui_subscriber(subscriber)
+  end
+
+  #
+  # Instance Methods
+  #
+
+  def supervision_group
+    unless instance_variable_defined? :@supervision_group
+      Celluloid.start
+      # {run!} runs the group in the background
+      @supervision_group = Metasploit::Framework::SupervisionGroup.run!(:metasploit_framework)
+    end
+
+    @supervision_group
   end
 
   def inspect
