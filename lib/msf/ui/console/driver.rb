@@ -532,10 +532,8 @@ class Driver < Msf::Ui::Driver
 
     framework.events.on_ui_start(Msf::Framework::Revision)
 
-    if $msf_spinner_thread
-      $msf_spinner_thread.kill
-      $stderr.print "\n"
-    end
+    Celluloid::Actor[:metasploit_framework_command_console_spinner].terminate!
+    $stderr.print "\n"
 
     run_single("banner") unless opts['DisableBanner']
 

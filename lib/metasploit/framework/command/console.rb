@@ -7,36 +7,29 @@ require 'metasploit/framework/command/base'
 
 # Based on pattern used for lib/rails/commands in the railties gem.
 class Metasploit::Framework::Command::Console < Metasploit::Framework::Command::Base
+  extend ActiveSupport::Autoload
 
-  # Provides an animated spinner in a seperate thread.
-  #
-  # See GitHub issue #4147, as this may be blocking some
-  # Windows instances, which is why Windows platforms
-  # should simply return immediately.
-
-  def spinner
-    return if Rex::Compat.is_windows
-    return if Rex::Compat.is_cygwin
-    return if $msf_spinner_thread
-    $msf_spinner_thread = Thread.new do
-      $stderr.print "[*] Starting the Metasploit Framework console..."
-      loop do
-        %q{/-\|}.each_char do |c|
-          $stderr.print c
-          $stderr.print "\b"
-        end
-      end
-    end
-  end
+  autoload :Spinner
+  autoload :SupervisionGroup
 
   def start
     case parsed_options.options.subcommand
     when :version
       $stderr.puts "Framework Version: #{Metasploit::Framework::VERSION}"
     else
-      spinner unless parsed_options.options.console.quiet
+      # start Celluloid::SupervisionGroup
+      supervision_group
+
+      unless parsed_options.options.console.quiet
+        supervision_group[:metasploit_framework_command_console_spinner].async.spin
+      end
+
       driver.run
     end
+  end
+
+  def supervision_group
+    @supervision_group ||= Metasploit::Framework::Command::Console::SupervisionGroup.run!
   end
 
   private
