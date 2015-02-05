@@ -9,6 +9,7 @@ require 'metasploit/framework/command/base'
 class Metasploit::Framework::Command::Console < Metasploit::Framework::Command::Base
   extend ActiveSupport::Autoload
 
+  autoload :Driver
   autoload :Spinner
   autoload :SupervisionGroup
 
@@ -24,7 +25,7 @@ class Metasploit::Framework::Command::Console < Metasploit::Framework::Command::
         supervision_group[:metasploit_framework_command_console_spinner].async.spin
       end
 
-      driver.run
+      supervision_group[:metasploit_framework_command_console_driver].run(driver_options)
     end
   end
 
@@ -33,24 +34,6 @@ class Metasploit::Framework::Command::Console < Metasploit::Framework::Command::
   end
 
   private
-
-  # The console UI driver.
-  #
-  # @return [Msf::Ui::Console::Driver]
-  def driver
-    unless @driver
-      # require here so minimum loading is done before {start} is called.
-      require 'msf/ui'
-
-      @driver = Msf::Ui::Console::Driver.new(
-          Msf::Ui::Console::Driver::DefaultPrompt,
-          Msf::Ui::Console::Driver::DefaultPromptChar,
-          driver_options
-      )
-    end
-
-    @driver
-  end
 
   def driver_options
     unless @driver_options
