@@ -84,21 +84,19 @@ class Framework
   #
   # Creates an instance of the framework context.
   #
+  # @param options [Hash{Object => Object}]
+  # @option options [Array<String>] :module_types (Msf::MODULE_TYPES) The module types for {#modules} to load.
   def initialize(options={})
     self.options = options
     # call super to initialize MonitorMixin.  #synchronize won't work without this.
     super()
 
-    # Allow specific module types to be loaded
-    types = options[:module_types] || Msf::MODULE_TYPES
-
     self.events    = EventDispatcher.new(self)
-    self.modules   = ModuleManager.new(self,types)
     self.datastore = DataStore.new
     self.jobs      = Rex::JobContainer.new
     self.plugins   = PluginManager.new(self)
-    # ensure supervision_group is started, so that accessing it doesn't need to be Thread-safe
-    self.supervision_group
+
+    self.run_supervision_group!
 
     # Configure the thread factory
     Rex::ThreadFactory.provider = Metasploit::Framework::ThreadFactoryProvider.new(framework: self)
@@ -115,14 +113,21 @@ class Framework
   # Instance Methods
   #
 
-  def supervision_group
-    unless instance_variable_defined? :@supervision_group
-      Celluloid.start
-      # {run!} runs the group in the background
-      @supervision_group = Metasploit::Framework::SupervisionGroup.run!(:metasploit_framework)
-    end
+  def run_supervision_group!
+    # {run!} runs the group in the background
+    supervision_group = Metasploit::Framework::SupervisionGroup.run!
 
-    @supervision_group
+    module_types = options[:module_types] || Msf::MODULE_TYPES
+    supervision_group.supervise_as :msf_module_manager, Msf::ModuleManager, self, module_types
+
+    self.supervision_group = supervision_group
+  end
+
+  # Module manager that contains information about all loaded modules, regardless of type.
+  #
+  # @return [Celluloid<Msf::ModuleManager>]
+  def modules
+    supervision_group[:msf_module_manager]
   end
 
   def inspect
@@ -183,11 +188,6 @@ class Framework
   # for interacting with the correlation engine.
   #
   attr_reader   :events
-  #
-  # Module manager that contains information about all loaded modules,
-  # regardless of type.
-  #
-  attr_reader   :modules
   #
   # The global framework datastore that can be used by modules.
   #
