@@ -21,6 +21,7 @@ class SessionManager < Hash
   include Framework::Offspring
 
   autoload :ID, 'msf/core/session_manager/id'
+  autoload :Initializer, 'msf/core/session_manager/initializer'
   autoload :SupervisionGroup, 'msf/core/session_manager/supervision_group'
 
   #
@@ -36,41 +37,15 @@ class SessionManager < Hash
 
   attr_accessor :supervision_group
 
+  #
+  # Initialize
+  #
+
   def initialize(framework)
     self.framework = framework
-    self.scheduler_queue = ::Queue.new
-    self.initialize_scheduler_threads
     self.supervision_group = Msf::SessionManager::SupervisionGroup.run!
 
     async.monitor
-  end
-
-  #
-  # Dedicated worker threads for pulling data out of new sessions
-  #
-  def initialize_scheduler_threads
-    self.scheduler_threads = []
-    1.upto(SCHEDULER_THREAD_COUNT) do |i|
-      self.scheduler_threads << framework.threads.spawn("SessionScheduler-#{i}", true) do
-        while true
-          item = self.scheduler_queue.pop
-          begin
-            item.call()
-          rescue ::Exception => e
-            wlog("Exception in scheduler thread #{e.class} #{e}")
-            wlog("Call Stack\n#{e.backtrace.join("\n")}", 'core', LEV_3)
-          end
-        end
-      end
-    end
-  end
-
-  #
-  # Add a new task to the loader thread queue. Task is assumed to be
-  # a Proc or another object that responds to call()
-  #
-  def schedule(task)
-    self.scheduler_queue.push(task)
   end
 
   #

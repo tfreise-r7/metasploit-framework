@@ -27,43 +27,18 @@ module MeterpreterOptions
   def on_session(session)
     super
 
-    # Defer the session initialization to the Session Manager scheduler
-    framework.sessions.schedule Proc.new {
-
-    # Configure unicode encoding before loading stdapi
-    session.encode_unicode = ( datastore['EnableUnicodeEncoding'] ? true : false )
-
-    session.init_ui(self.user_input, self.user_output)
-
-    if (datastore['AutoLoadStdapi'] == true)
-
-      session.load_stdapi
-
-      if datastore['AutoSystemInfo']
-        session.load_session_info
-      end
-
-      if session.platform =~ /win32|win64/i
-        session.load_priv rescue nil
-      end
-    end
-
-    if session.platform =~ /android/i
-      if datastore['AutoLoadAndroid']
-        session.load_android
-      end
-    end
-
-    [ 'InitialAutoRunScript', 'AutoRunScript' ].each do |key|
-      if (datastore[key].empty? == false)
-        args = Shellwords.shellwords( datastore[key] )
-        print_status("Session ID #{session.sid} (#{session.tunnel_to_s}) processing #{key} '#{datastore[key]}'")
-        session.execute_script(args.shift, *args)
-      end
-    end
-
-    }
-
+    # Hand off to SessionManager, so that UI remains responsive
+    Celluloid::Actor[:msf_session_manager_initializer_pool].async.start_session(
+        auto_load_android: !!datastore['AutoLoadAndroid'],
+        auto_load_stdapi: !!datastore['AutoLoadStdapi'],
+        auto_run_script: datastore['AutoRunScript'],
+        auto_system_info: !!datastore['AutoSystemInfo'],
+        enable_unicode_encoding: !!datastore['EnableUnicodeEncoding'],
+        initial_auto_run_script: datastore['InitialAutoRunScript'],
+        session: session,
+        user_input: user_input,
+        user_output: user_output
+    )
   end
 
 end
