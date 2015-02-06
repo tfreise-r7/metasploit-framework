@@ -52,6 +52,12 @@ class SessionManager < Hash
   # Instance Methods
   #
 
+  # List of currently managed sessions.
+  #
+  # @return [Array<Msf::Session>] Copy of the current sessions.  Actual sessions may change after this method returns.
+  def list
+    self.values.dup
+  end
   #
   # Enumerates the sorted list of keys.
   #

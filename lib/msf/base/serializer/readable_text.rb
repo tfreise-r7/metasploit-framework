@@ -542,9 +542,9 @@ class ReadableText
       'Header'  => "Active sessions",
       'Columns' => columns)
 
-    framework.sessions.each_sorted { |k|
-      session = framework.sessions[k]
+    sorted_sessions = framework.sessions.list.sort_by(&:sid)
 
+    sorted_sessions.each { |session|
       sinfo = session.info.to_s
       # Arbitrarily cut it at 80 columns
       if sinfo.length > 80
@@ -560,7 +560,7 @@ class ReadableText
       tbl << row
     }
 
-    return framework.sessions.length > 0 ? tbl.to_s : "#{tbl.header_to_s}No active sessions.\n"
+    return sorted_sessions.length > 0 ? tbl.to_s : "#{tbl.header_to_s}No active sessions.\n"
   end
 
   # Dumps the list of running jobs.
