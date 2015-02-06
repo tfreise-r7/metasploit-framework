@@ -49,6 +49,10 @@ class SessionManager < Hash
   end
 
   #
+  # Instance Methods
+  #
+
+  #
   # Enumerates the sorted list of keys.
   #
   def each_sorted(&block)
