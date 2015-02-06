@@ -18,18 +18,29 @@ module Msf
 ###
 class SessionManager < Hash
   include Celluloid
-
   include Framework::Offspring
+
+  autoload :ID, 'msf/core/session_manager/id'
+  autoload :SupervisionGroup, 'msf/core/session_manager/supervision_group'
+
+  #
+  # CONSTANTS
+  #
 
   LAST_SEEN_INTERVAL  = 60 * 2.5
   SCHEDULER_THREAD_COUNT = 5
 
+  #
+  # Attributes
+  #
+
+  attr_accessor :supervision_group
+
   def initialize(framework)
     self.framework = framework
-    self.sid_pool  = 0
-    self.mutex = Mutex.new
     self.scheduler_queue = ::Queue.new
     self.initialize_scheduler_threads
+    self.supervision_group = Msf::SessionManager::SupervisionGroup.run!
 
     async.monitor
   end
@@ -93,7 +104,7 @@ class SessionManager < Hash
       return nil
     end
 
-    next_sid = allocate_sid
+    next_sid = supervision_group[:msf_session_manager_id].next
 
     # Initialize the session's sid and framework instance pointer
     session.sid       = next_sid
@@ -166,15 +177,6 @@ class SessionManager < Hash
     end
 
     session
-  end
-
-  #
-  # Allocates the next Session ID
-  #
-  def allocate_sid
-    self.mutex.synchronize do
-      self.sid_pool += 1
-    end
   end
 
   def monitor
@@ -286,11 +288,10 @@ class SessionManager < Hash
 
 protected
 
-  attr_accessor :sid_pool, :sessions # :nodoc:
+  attr_accessor :sessions # :nodoc:
   attr_accessor :monitor_thread # :nodoc:
   attr_accessor :scheduler_threads # :nodoc:
   attr_accessor :scheduler_queue # :nodoc:
-  attr_accessor :mutex # :nodoc:
 
 end
 
