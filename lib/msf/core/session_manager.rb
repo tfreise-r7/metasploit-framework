@@ -260,14 +260,6 @@ class SessionManager < Hash
     # call self asynchronously so other messages can be interleaved
     async.monitor
   end
-
-protected
-
-  attr_accessor :sessions # :nodoc:
-  attr_accessor :monitor_thread # :nodoc:
-  attr_accessor :scheduler_threads # :nodoc:
-  attr_accessor :scheduler_queue # :nodoc:
-
 end
 
 end
