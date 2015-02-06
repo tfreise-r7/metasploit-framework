@@ -17,6 +17,7 @@ module Msf
 #
 ###
 class SessionManager < Hash
+  include Celluloid
 
   include Framework::Offspring
 
@@ -30,132 +31,7 @@ class SessionManager < Hash
     self.scheduler_queue = ::Queue.new
     self.initialize_scheduler_threads
 
-    self.monitor_thread = framework.threads.spawn("SessionManager", true) do
-      last_seen_timer = Time.now.utc
-
-      respawn_max = 30
-      respawn_cnt = 0
-
-      begin
-      while true
-
-        #
-        # Process incoming data from all stream-based sessions and queue the
-        # data into the associated ring buffers.
-        #
-        rings = values.select{|s| s.respond_to?(:ring) and s.ring and s.rstream }
-        ready = ::IO.select(rings.map{|s| s.rstream}, nil, nil, 0.5) || [[],[],[]]
-
-        ready[0].each do |fd|
-          s = rings.select{|s| s.rstream == fd}.first
-          next if not s
-
-          begin
-            buff = fd.get_once(-1)
-            if buff
-              # Store the data in the associated ring
-              s.ring.store_data(buff)
-
-              # Store the session event into the database.
-              # Rescue anything the event handlers raise so they
-              # don't break our session.
-              framework.events.on_session_output(s, buff) rescue nil
-            end
-          rescue ::Exception => e
-            wlog("Exception reading from Session #{s.sid}: #{e.class} #{e}")
-            unless e.kind_of? EOFError
-              # Don't bother with a call stack if it's just a
-              # normal EOF
-              dlog("Call Stack\n#{e.backtrace.join("\n")}", 'core', LEV_3)
-            end
-
-            # Flush any ring data in the queue
-            s.ring.clear_data rescue nil
-
-            # Shut down the socket itself
-            s.rstream.close rescue nil
-
-            # Deregister the session
-            deregister(s, "Died from #{e.class}")
-          end
-        end
-
-
-        #
-        # TODO: Call the dispatch entry point of each Meterpreter thread instead of
-        #       dedicating specific processing threads to each session
-        #
-
-
-        #
-        # Check for closed / dead / terminated sessions
-        #
-        values.each do |s|
-          if not s.alive?
-            deregister(s, "Died")
-            wlog("Session #{s.sid} has died")
-            next
-          end
-        end
-
-        #
-        # Mark all open session as alive every LAST_SEEN_INTERVAL
-        #
-        if (Time.now.utc - last_seen_timer) >= LAST_SEEN_INTERVAL
-
-          # Update this timer BEFORE processing the session list, this will prevent
-          # processing time for large session lists from skewing our update interval.
-
-          last_seen_timer = Time.now.utc
-          if framework.db.active
-            ::ActiveRecord::Base.connection_pool.with_connection do
-              values.each do |s|
-                # Update the database entry on a regular basis, marking alive threads
-                # as recently seen.  This notifies other framework instances that this
-                # session is being maintained.
-                if s.db_record
-                  s.db_record.last_seen = Time.now.utc
-                  s.db_record.save
-                end
-              end
-            end
-          end
-        end
-
-
-        #
-        # Skip the database cleanup code below if there is no database
-        #
-        next if not (framework.db and framework.db.active)
-
-        #
-        # Clean out any stale sessions that have been orphaned by a dead
-        # framework instance.
-        #
-        ::ActiveRecord::Base.connection_pool.with_connection do |conn|
-          ::Mdm::Session.where(closed_at: nil).each do |db_session|
-            if db_session.last_seen.nil? or ((Time.now.utc - db_session.last_seen) > (2*LAST_SEEN_INTERVAL))
-              db_session.closed_at    = db_session.last_seen || Time.now.utc
-              db_session.close_reason = "Orphaned"
-              db_session.save
-            end
-          end
-        end
-      end
-
-      #
-      # All session management falls apart when any exception is raised to this point. Log it.
-      #
-      rescue ::Exception => e
-        respawn_cnt += 1
-        elog("Exception #{respawn_cnt}/#{respawn_max} in monitor thread #{e.class} #{e}")
-        elog("Call stack: \n#{e.backtrace.join("\n")}")
-        if respawn_cnt < respawn_max
-          ::IO.select(nil, nil, nil, 10.0)
-          retry
-        end
-      end
-    end
+    async.monitor
   end
 
   #
@@ -299,6 +175,113 @@ class SessionManager < Hash
     self.mutex.synchronize do
       self.sid_pool += 1
     end
+  end
+
+  def monitor
+    last_seen_timer = Time.now.utc
+
+    #
+    # Process incoming data from all stream-based sessions and queue the
+    # data into the associated ring buffers.
+    #
+    rings = values.select{|s| s.respond_to?(:ring) and s.ring and s.rstream }
+    ready = ::IO.select(rings.map{|s| s.rstream}, nil, nil, 0.5) || [[],[],[]]
+
+    ready[0].each do |fd|
+      s = rings.select{|s| s.rstream == fd}.first
+      next if not s
+
+      begin
+        buff = fd.get_once(-1)
+        if buff
+          # Store the data in the associated ring
+          s.ring.store_data(buff)
+
+          # Store the session event into the database.
+          # Rescue anything the event handlers raise so they
+          # don't break our session.
+          framework.events.on_session_output(s, buff) rescue nil
+        end
+      rescue ::Exception => e
+        wlog("Exception reading from Session #{s.sid}: #{e.class} #{e}")
+        unless e.kind_of? EOFError
+          # Don't bother with a call stack if it's just a
+          # normal EOF
+          dlog("Call Stack\n#{e.backtrace.join("\n")}", 'core', LEV_3)
+        end
+
+        # Flush any ring data in the queue
+        s.ring.clear_data rescue nil
+
+        # Shut down the socket itself
+        s.rstream.close rescue nil
+
+        # Deregister the session
+        deregister(s, "Died from #{e.class}")
+      end
+    end
+
+    #
+    # TODO: Call the dispatch entry point of each Meterpreter thread instead of
+    #       dedicating specific processing threads to each session
+    #
+
+    #
+    # Check for closed / dead / terminated sessions
+    #
+    values.each do |s|
+      if not s.alive?
+        deregister(s, "Died")
+        wlog("Session #{s.sid} has died")
+        next
+      end
+    end
+
+    #
+    # Mark all open session as alive every LAST_SEEN_INTERVAL
+    #
+    if (Time.now.utc - last_seen_timer) >= LAST_SEEN_INTERVAL
+
+      # Update this timer BEFORE processing the session list, this will prevent
+      # processing time for large session lists from skewing our update interval.
+
+      last_seen_timer = Time.now.utc
+      if framework.db.active
+        ::ActiveRecord::Base.connection_pool.with_connection do
+          values.each do |s|
+            # Update the database entry on a regular basis, marking alive threads
+            # as recently seen.  This notifies other framework instances that this
+            # session is being maintained.
+            if s.db_record
+              s.db_record.last_seen = Time.now.utc
+              s.db_record.save
+            end
+          end
+        end
+      end
+    end
+
+    #
+    # Skip the database cleanup code below if there is no database
+    #
+    if framework.db.active
+      #
+      # Clean out any stale sessions that have been orphaned by a dead
+      # framework instance.
+      #
+      ::ActiveRecord::Base.connection_pool.with_connection do |conn|
+        ::Mdm::Session.where(closed_at: nil).each do |db_session|
+          if db_session.last_seen.nil? or ((Time.now.utc - db_session.last_seen) > (2*LAST_SEEN_INTERVAL))
+            db_session.closed_at    = db_session.last_seen || Time.now.utc
+            db_session.close_reason = "Orphaned"
+            db_session.save
+          end
+        end
+      end
+    end
+
+    # call self asynchronously so other messages can be interleaved
+    async.monitor
   end
 
 protected

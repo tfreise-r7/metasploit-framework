@@ -120,7 +120,17 @@ class Framework
     module_types = options[:module_types] || Msf::MODULE_TYPES
     supervision_group.supervise_as :msf_module_manager, Msf::ModuleManager, self, module_types
 
+    supervision_group.supervise_as :msf_session_manager, Msf::SessionManager, self
+
     self.supervision_group = supervision_group
+  end
+
+  # Session manager that tracks sessions associated with this framework
+  # instance over the course of their lifetime.
+  #
+  # @return [Celluloid<Msf::SessionManager>]
+  def sessions
+    supervision_group[:msf_session_manager]
   end
 
   # Module manager that contains information about all loaded modules, regardless of type.
@@ -217,16 +227,6 @@ class Framework
   def db
     synchronize {
       @db ||= Msf::DBManager.new(self, options)
-    }
-  end
-
-  # Session manager that tracks sessions associated with this framework
-  # instance over the course of their lifetime.
-  #
-  # @return [Msf::SessionManager]
-  def sessions
-    synchronize {
-      @sessions ||= Msf::SessionManager.new(self)
     }
   end
 
