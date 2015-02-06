@@ -1760,18 +1760,15 @@ class Core
       end
     when 'killall'
       print_status("Killing all sessions...")
-      framework.sessions.each_sorted do |s|
-        session = framework.sessions.get(s)
-        if session
-          if session.respond_to?(:response_timeout)
-            last_known_timeout = session.response_timeout
-            session.response_timeout = response_timeout
-          end
-          begin
-            session.kill
-          ensure
-            session.response_timeout = last_known_timeout if last_known_timeout
-          end
+      framework.sessions.list.each do |session|
+        if session.respond_to?(:response_timeout)
+          last_known_timeout = session.response_timeout
+          session.response_timeout = response_timeout
+        end
+        begin
+          session.kill
+        ensure
+          session.response_timeout = last_known_timeout if last_known_timeout
         end
       end
     when 'detach'
