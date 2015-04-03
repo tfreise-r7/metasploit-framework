@@ -174,16 +174,19 @@ module Metasploit
             # Use _send_recv instead of send_recv to skip automatic
             # authentication
             response = http_client._send_recv(request)
-          rescue ::EOFError, Errno::ETIMEDOUT, Rex::ConnectionError, ::Timeout::Error
+          rescue ::EOFError, Errno::ETIMEDOUT, Rex::ConnectionError, ::Timeout::Error, OpenSSL::SSL::SSLError
             error_message = "Unable to connect to target"
           end
-
+          
+          begin
           if !(response && response.code == 401 && response.headers['WWW-Authenticate'])
             error_message = "No authentication required"
           else
             error_message = false
           end
-
+          rescue ::EOFError, Errno::ETIMEDOUT, Rex::ConnectionError, ::Timeout::Error, OpenSSL::SSL::SSLError
+             error_message = "Unable to connect to target"
+             
           error_message
         end
 
@@ -267,7 +270,7 @@ module Metasploit
             if response && response.code == 200
               result_opts.merge!(status: Metasploit::Model::Login::Status::SUCCESSFUL, proof: response.headers)
             end
-          rescue Rex::ConnectionError => e
+          rescue Rex::ConnectionError, OpenSSL::SSL::SSLError => e
             result_opts.merge!(status: Metasploit::Model::Login::Status::UNABLE_TO_CONNECT, proof: e)
           end
 
